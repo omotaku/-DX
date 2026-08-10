@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Card Chess Duel</title>
+  <style>
+    :root {
+      --board-size-mobile: min(92vw, 520px);
+      --board-size-pc: min(70vh, 640px);
+      --neon-cyan: #00fff2;
+      --neon-magenta: #ff2bd1;
+      --neon-yellow: #f9ff21;
+      --bg-dark: #0b0e17;
+      --bg-panel: #12172a;
+      --bg-panel2: #171d33;
+      --turn-color: var(--neon-cyan);
+      --turn-glow: rgba(0,255,242,0.15);
+      --turn-bg: rgba(0,255,242,0.06);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      font-family: "Courier New", "Consolas", monospace;
+      background: radial-gradient(circle at 50% 0%, #1a2036 0%, var(--bg-dark) 70%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 8px;
+      overflow: hidden;
+      color: #e6f7ff;
+    }
+    .game-root {
+      width: 100%;
+      max-width: 1100px;
+      background: var(--bg-panel);
+      border: 1px solid var(--turn-color);
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 0 24px var(--turn-glow), 0 18px 50px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .game-root.turn-cpu {
+      --turn-color: #ff2b5a;
+      --turn-glow: rgba(255,43,90,0.3);
+      --turn-bg: rgba(255,43,90,0.08);
+    }
+    .opp-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-panel2);
+      border: 1px solid rgba(255,43,209,0.3);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .opp-side { font-weight: 700; color: var(--neon-magenta); text-shadow: 0 0 6px rgba(255,43,209,0.6); }
+    .chip {
+      background: rgba(0,255,242,0.08);
+      border: 1px solid rgba(0,255,242,0.4);
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--neon-cyan);
+    }
+    .king-status { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 12px; }
+    .king-ok { background: rgba(0,255,150,0.15); color: #00ffb0; border: 1px solid #00ffb0; }
+    .king-check { background: rgba(255,43,90,0.2); color: #ff2b5a; border: 1px solid #ff2b5a; box-shadow: 0 0 8px rgba(255,43,90,0.6); }
+    .notif-bar {
+      background: var(--turn-bg);
+      border-left: 3px solid var(--turn-color);
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--turn-color);
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      transition: color 0.3s, border-color 0.3s, background 0.3s;
+    }
+    .notif-bar.danger {
+      background: rgba(255,43,90,0.1);
+      border-left-color: #ff2b5a;
+      color: #ff2b5a;
+    }
+    .board-wrap { display: flex; justify-content: center; width: 100%; }
+    .board {
+      width: var(--board-size-mobile);
+      height: var(--board-size-mobile);
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      border: 2px solid var(--turn-color);
+      border-radius: 4px;
+      overflow: hidden;
+      touch-action: manipulation;
+      box-shadow: 0 0 20px var(--turn-glow) inset;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .sq {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(24px, 5.5vw, 36px);
+      user-select: none;
+      cursor: pointer;
+    }
+    .light { background: #1c2340; }
+    .dark { background: #0f1326; }
+    .sq.sel { outline: 2px solid var(--neon-yellow); outline-offset: -2px; box-shadow: 0 0 10px rgba(249,255,33,0.6) inset; }
+    .sq.mv::after {
+      content: '';
+      position: absolute;
+      width: 26%;
+      height: 26%;
+      background: var(--neon-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--neon-cyan);
+      opacity: 0.85;
+    }
+    .sq.cap { background: rgba(255,43,90,0.25) !important; }
+    .sq.cap::after {
+      content: '';
+      position: absolute;
+      width: 78%;
+      height: 78%;
+      border: 2px solid #ff2b5a;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(255,43,90,0.7);
+    }
+    .sq.summon { box-shadow: inset 0 0 0 2px #00d9ff; }
+    .sq.equip { box-shadow: inset 0 0 0 2px #6fff6f; }
+    .sq.trap { box-shadow: inset 0 0 0 2px var(--neon-magenta); }
+    .sq.check { box-shadow: inset 0 0 0 3px #ff2b5a; }
+    .sq.lock { outline: 2px dashed #ffb020; outline-offset: -2px; }
+    /* 自分（白）が設置した罠のマス。相手の罠は表示しない */
+    .sq.own-trap {
+      box-shadow: inset 0 0 0 2px var(--neon-magenta);
+      background-image: repeating-linear-gradient(45deg, rgba(255,43,209,0.12) 0, rgba(255,43,209,0.12) 4px, transparent 4px, transparent 10px);
+    }
+    .sq.own-trap::before {
+      content: "⚠";
+      position: absolute;
+      bottom: 1px;
+      right: 1px;
+      font-size: clamp(10px, 2.4vw, 15px);
+      color: var(--neon-magenta);
+      text-shadow: 0 0 5px var(--neon-magenta);
+      z-index: 3;
+      pointer-events: none;
+    }
+    .piece {
+      line-height: 1;
+      position: relative;
+      z-index: 1;
+      color: #fff;
+      filter: drop-shadow(0 0 3px rgba(255,255,255,0.6));
+    }
+    .piece.enemy {
+      color: #000;
+      -webkit-text-stroke: 1.5px #ff2b5a;
+      text-stroke: 1.5px #ff2b5a;
+      filter: drop-shadow(0 0 5px rgba(255,43,90,0.9));
+    }
+    .piece.bounty::after {
+      content: "◆";
+      position: absolute;
+      right: 0;
+      top: 0;
+      font-size: clamp(9px, 2.2vw, 13px);
+      color: var(--neon-yellow);
+      z-index: 2;
+      text-shadow: 0 0 4px var(--neon-yellow);
+    }
+    .piece.sleep::before {
+      content: "Z";
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-size: clamp(9px, 2.2vw, 13px);
+      color: #ffb020;
+      z-index: 2;
+    }
+    .self-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-panel2);
+      border: 1px solid var(--turn-color);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      transition: border-color 0.3s;
+    }
+    .self-side { font-weight: 700; color: var(--turn-color); text-shadow: 0 0 6px var(--turn-glow); transition: color 0.3s; }
+    .self-stats { display: flex; gap: 8px; align-items: center; }
+    .hand-panel {
+      background: var(--bg-panel2);
+      border: 1px solid rgba(0,255,242,0.25);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    .hand-title { font-size: 12px; font-weight: 700; margin-bottom: 4px; color: var(--neon-cyan); letter-spacing: 1px; }
+    .hand-strip { display: flex; align-items: center; gap: 4px; }
+    .hand {
+      flex: 1;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
+    }
+    .hand::-webkit-scrollbar { height: 5px; }
+    .hand::-webkit-scrollbar-track { background: transparent; }
+    .hand::-webkit-scrollbar-thumb { background: rgba(0,255,242,0.4); border-radius: 3px; }
+    .hand-arrow {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid var(--neon-cyan);
+      background: transparent;
+      color: var(--neon-cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .hand-arrow:disabled { opacity: 0.25; cursor: default; }
+    .card {
+      min-width: 88px;
+      flex: 0 0 auto;
+      background: linear-gradient(135deg, #1a2140, #22123a);
+      border: 1px solid rgba(0,255,242,0.4);
+      color: #e6f7ff;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11px;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(0,255,242,0.15);
+      scroll-snap-align: start;
+    }
+    .card.disabled { opacity: 0.4; cursor: not-allowed; }
+    .card-name { font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--neon-cyan); }
+    .card-cost { opacity: 0.9; color: var(--neon-yellow); }
+    .btn-row { display: flex; gap: 8px; margin-top: 6px; }
+    .btn {
+      flex: 1;
+      border: 1px solid var(--neon-cyan);
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      background: transparent;
+      color: var(--neon-cyan);
+      letter-spacing: 0.5px;
+    }
+    .btn-main { background: rgba(0,255,242,0.12); }
+    .btn-sub { border-color: rgba(255,255,255,0.25); color: #cfd8e6; }
+    .btn-danger { border-color: #ff2b5a; color: #ff2b5a; background: rgba(255,43,90,0.08); }
+    .logbox {
+      display: none;
+      margin-top: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+      background: #0d1122;
+      border: 1px solid rgba(0,255,242,0.2);
+      border-radius: 6px;
+      padding: 6px;
+      font-size: 11px;
+      color: #9fd8e6;
+    }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .log-entry:last-child { border-bottom: none; }
+    .overlay, .modal, .go-modal, .popup {
+      position: fixed;
+      inset: 0;
+      display: none;
+    }
+    .overlay { background: rgba(0,0,0,0.6); z-index: 100; }
+    .modal, .go-modal, .popup {
+      inset: auto;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--bg-panel);
+      border: 1px solid var(--neon-cyan);
+      box-shadow: 0 0 24px rgba(0,255,242,0.3);
+      border-radius: 10px;
+      padding: 14px;
+      z-index: 110;
+      max-width: 420px;
+      width: calc(100% - 24px);
+      color: #e6f7ff;
+    }
+    .modal.active, .overlay.active, .go-modal.active, .popup.active { display: block; }
+    .popup { max-width: 320px; }
+    .menu { position: fixed; top: 8px; right: 8px; z-index: 120; }
+    .menu button {
+      border: 1px solid var(--neon-cyan);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(0,255,242,0.08);
+      color: var(--neon-cyan);
+      cursor: pointer;
+    }
+    .dropdown {
+      position: absolute;
+      top: 34px;
+      right: 0;
+      background: var(--bg-panel);
+      border: 1px solid rgba(0,255,242,0.4);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      padding: 6px;
+      min-width: 180px;
+      display: none;
+    }
+    .dropdown.active { display: block; }
+    .dd-title { font-weight: 700; padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: var(--neon-magenta); }
+    .cpu-item, .menu-item { padding: 4px; border-radius: 5px; cursor: pointer; font-size: 12px; color: #cfd8e6; }
+    .cpu-item:hover, .menu-item:hover { background: rgba(0,255,242,0.08); }
+    .cpu-item.sel { background: rgba(0,255,242,0.18); color: var(--neon-cyan); }
+    .toast {
+      position: fixed;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10,14,26,0.92);
+      border: 1px solid var(--neon-cyan);
+      color: var(--neon-cyan);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      z-index: 130;
+      display: none;
+      max-width: 80vw;
+      text-align: center;
+      box-shadow: 0 0 10px rgba(0,255,242,0.4);
+    }
+    .toast.danger { background: rgba(30,6,12,0.95); border-color: #ff2b5a; color: #ff2b5a; box-shadow: 0 0 10px rgba(255,43,90,0.6); }
+    .toast.cpu { background: rgba(30,6,26,0.95); border-color: var(--neon-magenta); color: var(--neon-magenta); box-shadow: 0 0 10px rgba(255,43,209,0.6); }
+    .toast.show { display: block; animation: fadeDown 0.2s ease-out; }
+    @keyframes fadeDown { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @media (min-width: 800px) {
+      .game-root { flex-direction: row; align-items: stretch; padding: 22px; gap: 16px; max-width: 1300px; }
+      .left-col, .right-col { display: flex; flex-direction: column; gap: 12px; width: 260px; }
+      .center-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+      .board { width: var(--board-size-pc); height: var(--board-size-pc); }
+      .logbox { display: block; max-height: none; flex: 1; overflow-y: auto; font-size: 13px; }
+      .hand { flex-wrap: wrap; overflow-x: visible; }
+      .hand-arrow { display: none; }
+      .card { min-width: 115px; font-size: 13px; padding: 10px; }
+      .btn-row { gap: 12px; }
+      .btn { padding: 13px 20px; font-size: 15px; }
+      .hand-title { font-size: 15px; }
+      .toast { top: 12px; font-size: 13px; padding: 8px 16px; }
+      .opp-panel, .self-panel { font-size: 14px; padding: 10px 14px; }
+      .chip { font-size: 12px; padding: 5px 10px; }
+      .notif-bar { font-size: 14px; padding: 10px 14px; min-height: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="menu">
+    <button onclick="toggleMenu()">⚙ その他</button>
+    <div class="dropdown" id="menuDrop">
+      <div class="dd-title">CPU 設定</div>
+      <div class="cpu-item sel" data-lv="tutorial" onclick="setCpu('tutorial')">チュートリアル</div>
+      <div class="cpu-item" data-lv="easy" onclick="setCpu('easy')">弱い</div>
+      <div class="cpu-item" data-lv="normal" onclick="setCpu('normal')">普通</div>
+      <div class="cpu-item" data-lv="hard" onclick="setCpu('hard')">強い</div>
+      <div style="border-top:1px solid rgba(255,255,255,0.1);margin:4px 0"></div>
+      <div class="menu-item" onclick="toggleLog()">ログを表示</div>
+      <div class="menu-item" onclick="showRules()">ルール説明</div>
+      <div class="menu-item" onclick="resetGame()">やり直す</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="overlay" id="overlay"></div>
+
+  <div class="modal" id="cardModal">
+    <div style="font-size:16px;font-weight:700;color:var(--neon-cyan)" id="cardTitle"></div>
+    <div style="margin-top:4px;color:var(--neon-yellow);font-size:13px" id="cardCost"></div>
+    <div style="margin-top:8px;line-height:1.5;font-size:13px" id="cardText"></div>
+    <div style="margin-top:6px;font-size:12px;color:#9fd8e6" id="cardTarget"></div>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px;">
+      <button class="btn btn-sub" onclick="closeCardModal()">使用しない</button>
+      <button class="btn btn-main" id="cardUseBtn">このカードを使用</button>
+    </div>
+  </div>
+
+  <div class="go-modal" id="goModal">
+    <div style="font-size:19px;font-weight:800;color:var(--neon-magenta)" id="goTitle"></div>
+    <div style="margin-top:6px;font-size:13px;color:#cfd8e6" id="goMsg"></div>
+    <div style="margin-top:12px;text-align:right">
+      <button class="btn btn-main" onclick="resetGame()">もう一度</button>
+    </div>
+  </div>
+
+  <div class="popup" id="rulesPopup">
+    <div style="font-size:15px;font-weight:700;margin-bottom:8px;color:var(--neon-cyan)">ルール説明</div>
+    <div style="font-size:12px;line-height:1.6;max-height:60vh;overflow-y:auto;color:#cfd8e6">
+      <p>・キングをチェックメイトすれば勝利です。</p>
+      <p>・毎ターンコストが 2 回復（最大 5）し、手札を 1 枚引きます（10 枚まで）。コストは自分のターン開始時と賞金付与の効果以外では増えません。</p>
+      <p>・メインフェイズでカードを使い、バトルフェイズで駒を 1 回動かします。</p>
+      <p>・ポーン召喚は自陣 2 段目、罠は自陣 1〜3 段目に設置します。</p>
+      <p>・装備は 1 ターンに 1 回、装備したポーンは昇格しません。</p>
+      <p>・賞金付き駒が相手駒を撃破するとコスト +2（最大 5）。</p>
+      <p>・CPU はチュートリアルのみキング限定。弱い/普通/強いは 1 手ずつカードを使い、通知を出しながら駒を展開します。</p>
+      <p>・味方の駒は白、敵の駒は黒に赤い縁取りで表示されます。</p>
+      <p>・CPU のターン中は画面全体が赤みを帯びて表示されます。</p>
+      <p>・自分が設置した罠のマスには常に「⚠」マークが表示されます。相手の罠は発動するまで見えません。</p>
+    </div>
+    <div style="text-align:right;margin-top:10px;">
+      <button class="btn btn-main" onclick="closeRules()">閉じる</button>
+    </div>
+  </div>
+
+  <div class="game-root" id="gameRoot">
+    <div class="left-col" style="display:none;" id="leftCol">
+      <div class="logbox" id="logBoxPc"></div>
+    </div>
+    <div class="center-col">
+      <div class="opp-panel" id="oppPanelMobile"></div>
+      <div class="notif-bar" id="notifBar">ターン開始</div>
+      <div class="board-wrap"><div class="board" id="board"></div></div>
+      <div class="self-panel">
+        <div class="self-side" id="selfSideText">プレイヤー（白）</div>
+        <div class="self-stats">
+          <span class="chip">ターン:<span id="turnText">1</span></span>
+          <span class="chip">コスト:<span id="costText">0</span>/5</span>
+          <span class="chip">手札:<span id="handText">0</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="right-col" style="display:none;" id="rightCol">
+      <div class="hand-panel">
+        <div class="hand-title">HAND</div>
+        <div class="hand" id="handPc"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-sub" onclick="clearSelection()">選択解除</button>
+        <button class="btn btn-danger" onclick="resign()">投了</button>
+      </div>
+    </div>
+    <div class="hand-panel" id="handPanelMobile">
+      <div class="hand-title">HAND</div>
+      <div class="hand-strip">
+        <button class="hand-arrow" id="handLeft" onclick="scrollHand(-1)">◀</button>
+        <div class="hand" id="handMobile"></div>
+        <button class="hand-arrow" id="handRight" onclick="scrollHand(1)">▶</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-sub" onclick="clearSelection()">選択解除</button>
+        <button class="btn btn-danger" onclick="resign()">投了</button>
+      </div>
+      <div class="logbox" id="logBoxMobile"></div>
+    </div>
+  </div>
+
+  <script>
+    const COST_MAX = 5, HAND_LIMIT = 10;
+    const Cards = {
+      pawnSummon:{name:'ポーン召喚',cost:1,text:'自陣 2 段目の空きマスにポーンを配置。召喚したターンは移動不可。',type:'summon',target:'自陣 2 段目'},
+      knightEquip:{name:'ナイト装備',cost:2,text:'味方の通常ポーン 1 体をナイトに変化。装備したターンは移動不可。',type:'equip',as:'knight',target:'味方ポーン'},
+      bishopEquip:{name:'ビショップ装備',cost:2,text:'味方の通常ポーン 1 体をビショップに変化。装備したターンは移動不可。',type:'equip',as:'bishop',target:'味方ポーン'},
+      rookEquip:{name:'ルーク装備',cost:3,text:'味方の通常ポーン 1 体をルークに変化。装備したターンは移動不可。',type:'equip',as:'rook',target:'味方ポーン'},
+      supply:{name:'補給',cost:1,text:'カードを 2 枚引く（手札上限 10 枚まで）。',type:'supply',target:'なし'},
+      trapCapture:{name:'捕縛の罠',cost:2,text:'自陣 1〜3 段目に設置。踏んだ敵駒を自分の駒にする。',type:'trap',target:'自陣 1〜3 段目'},
+      trapSlow:{name:'鈍足の罠',cost:1,text:'自陣 1〜3 段目に設置。踏んだ駒の持ち主は次のターンを休む。',type:'trap',target:'自陣 1〜3 段目'},
+      trapPush:{name:'後退の罠',cost:1,text:'自陣 1〜3 段目に設置。踏んだ駒を 1 マス押し戻す。',type:'trap',target:'自陣 1〜3 段目'},
+      trapDrain:{name:'消耗の罠',cost:1,text:'自陣 1〜3 段目に設置。踏んだ駒の所有者のコストを 1 減らす。',type:'trap',target:'自陣 1〜3 段目'},
+      bounty:{name:'賞金付与',cost:1,text:'味方駒 1 体に賞金マーク。撃破時にコスト +2（最大 5）。',type:'bounty',target:'味方駒'}
+    };
+    const Glyph = {
+      w:{king:'♔',queen:'♕',rook:'♖',bishop:'♗',knight:'♘',pawn:'♙'},
+      b:{king:'♚',queen:'♛',rook:'♜',bishop:'♝',knight:'♞',pawn:'♟'}
+    };
+    const S = {
+      board:[],
+      cost:{w:0,b:0},
+      turn:1, side:'w',
+      hand:{w:[],b:[]}, deck:{w:[],b:[]},
+      sel:null, moves:[], enPassant:null, traps:[], log:[], logOpen:false,
+      cpu:'tutorial', over:false,
+      usedEquip:{w:false,b:false}, usedTrap:{w:false,b:false},
+      pending:null, phase:'main',
+      cpuActionsLeft:0, cpuFailed:null
+    };
+
+    function createDeck(){
+      const d=['pawnSummon','pawnSummon','pawnSummon','knightEquip','bishopEquip','rookEquip','supply','supply','trapCapture','trapSlow','trapPush','trapDrain','bounty'];
+      for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]];}
+      return d;
+    }
+
+    function initBoard(){
+      const b=Array.from({length:8},()=>Array(8).fill(null));
+      b[7][4]={type:'king',color:'w',moved:false,lock:0,equip:null,bounty:false};
+      b[0][4]={type:'king',color:'b',moved:false,lock:0,equip:null,bounty:false};
+      return b;
+    }
+
+    function resetGame(){
+      S.board=initBoard();
+      S.cost={w:0,b:0};
+      S.turn=1; S.side='w';
+      S.deck={w:createDeck(),b:createDeck()};
+      S.hand={w:[],b:[]};
+      drawCards('w',5); drawCards('b',5);
+      S.sel=null; S.moves=[]; S.enPassant=null; S.traps=[]; S.log=[];
+      S.over=false; S.usedEquip={w:false,b:false}; S.usedTrap={w:false,b:false};
+      S.pending=null; S.phase='main'; S.cpuActionsLeft=0; S.cpuFailed=null;
+      addLog('ゲーム開始');
+      startTurn();
+      document.getElementById('goModal').classList.remove('active');
+      document.getElementById('overlay').classList.remove('active');
+      render();
+    }
+
+    function addLog(msg){S.log.unshift(msg);renderLog();}
+    function renderLog(){
+      const html=S.log.map(x=>`<div class="log-entry">${x}</div>`).join('');
+      ['logBoxPc','logBoxMobile'].forEach(id=>{const e=document.getElementById(id);if(e)e.innerHTML=html;});
+    }
+
+    function startTurn(){
+      if(S.over)return;
+      const side=S.side;
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=S.board[r][c];if(p&&p.lock>0&&p.color===side)p.lock=Math.max(0,p.lock-1);}
+      S.cost[side]=Math.min(COST_MAX,S.cost[side]+2);
+      if(S.hand[side].length<HAND_LIMIT)drawCards(side,1);
+      S.usedEquip[side]=false; S.usedTrap[side]=false;
+      S.sel=null; S.moves=[]; S.pending=null; S.phase='main';
+      setBar(side==='w'?'メインフェイズです':'CPUのターンです', false, side==='b');
+      addLog(`--- ターン${S.turn} ${side==='w'?'プレイヤー':'CPU'} ---`);
+      updateTurnTheme();
+      render();
+      if(side==='b')setTimeout(cpuTurn,600);
+    }
+
+    function updateTurnTheme(){
+      const root=document.getElementById('gameRoot');
+      root.classList.toggle('turn-cpu', S.side==='b');
+    }
+
+    function drawCards(side,n){
+      for(let i=0;i<n;i++){
+        if(S.hand[side].length>=HAND_LIMIT)break;
+        if(!S.deck[side].length)S.deck[side]=createDeck();
+        S.hand[side].push(S.deck[side].pop());
+      }
+    }
+
+    function setBar(msg,danger=false,cpu=false){
+      const nb=document.getElementById('notifBar');
+      nb.textContent=msg;
+      nb.className='notif-bar'+(danger?' danger':'');
+    }
+    function popup(msg,danger=false,cpu=false){
+      const t=document.getElementById('toast');
+      t.textContent=msg;
+      t.className='toast'+(danger?' danger':'')+(cpu?' cpu':'');
+      t.classList.add('show');
+      setTimeout(()=>t.classList.remove('show'),850);
+    }
+
+    function render(){
+      const side=S.side, opp=side==='w'?'b':'w';
+      const oppSide = side==='w'?'黒（CPU）':'白（CPU）';
+      const kPos = kingPos(opp);
+      const kCheck = kPos?inCheck(opp):false;
+      const oppHtml = `<div><span class="opp-side">${oppSide}</span> <span class="chip">コスト:?</span></div><div><span class="chip">ターン:${S.turn}</span> <span class="king-status ${kCheck?'king-check':'king-ok'}">${kCheck?'!':'✓'}</span></div>`;
+      const oppEl=document.getElementById('oppPanelMobile'); if(oppEl)oppEl.innerHTML=oppHtml;
+      document.getElementById('selfSideText').textContent = side==='w'?'プレイヤー（白）':'CPU（黒）';
+      document.getElementById('turnText').textContent = S.turn;
+      document.getElementById('costText').textContent = S.cost[side];
+      document.getElementById('handText').textContent = S.hand[side].length;
+      const bd=document.getElementById('board'); bd.innerHTML='';
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const sq=document.createElement('div');
+        sq.className=`sq ${(r+c)%2?'dark':'light'}`; sq.onclick=()=>clickSq(r,c);
+        if(S.sel&&S.sel.r===r&&S.sel.c===c)sq.classList.add('sel');
+        const mv=S.moves.find(m=>m.r===r&&m.c===c); if(mv)sq.classList.add(mv.cap?'cap':'mv');
+        if(S.pending){
+          if(S.pending.kind==='summon'&&isSummonRow(r,side)&&!S.board[r][c])sq.classList.add('summon');
+          if(S.pending.kind==='equip'&&S.board[r][c]&&S.board[r][c].color===side&&S.board[r][c].type==='pawn'&&!S.board[r][c].equip)sq.classList.add('equip');
+          if(S.pending.kind==='trap'&&isTrapRow(r,side)&&!S.board[r][c])sq.classList.add('trap');
+        }
+        // 自分（白）が設置した罠のマスは常に表示。相手（黒/CPU）の罠は表示しない。
+        const myTrap = S.traps.find(t=>t.r===r&&t.c===c&&t.owner==='w');
+        if(myTrap) sq.classList.add('own-trap');
+        const p=S.board[r][c];
+        if(p){
+          const span=document.createElement('span'); span.className='piece'+(p.color===side?'':' enemy');
+          const t=p.equip||p.type; span.textContent=Glyph[p.color][t];
+          if(p.bounty)span.classList.add('bounty');
+          if(p.lock>0)span.classList.add('sleep');
+          if(p.type==='king'&&inCheck(p.color))sq.classList.add('check');
+          if(p.lock>0)sq.classList.add('lock');
+          sq.appendChild(span);
+        }
+        bd.appendChild(sq);
+      }
+      ['handMobile','handPc'].forEach(id=>{
+        const h=document.getElementById(id); if(!h)return; h.innerHTML='';
+        S.hand[side].forEach((cardId,idx)=>{
+          const cd=Cards[cardId];
+          const el=document.createElement('div');
+          el.className='card'+(S.cost[side]<cd.cost?' disabled':'');
+          el.innerHTML=`<div class="card-name">${cd.name}</div><div class="card-cost">COST:${cd.cost}</div>`;
+          el.onclick=()=>showCard(idx,cardId);
+          h.appendChild(el);
+        });
+      });
+      renderLog();
+      updateHandArrows();
+      updateTurnTheme();
+    }
+
+    function showCard(i,id){
+      if(S.side==='b')return;
+      const side=S.side;
+      const c=Cards[id];
+      if(S.cost[side]<c.cost)return popup('コストが足りません',true);
+      if(c.type==='equip'&&S.usedEquip[side])return popup('装備は 1 ターンに 1 回まで',true);
+      if(c.type==='trap'&&S.usedTrap[side])return popup('罠は 1 ターンに 1 回まで',true);
+      document.getElementById('cardTitle').textContent=c.name;
+      document.getElementById('cardCost').textContent=`COST:${c.cost}`;
+      document.getElementById('cardText').textContent=c.text;
+      document.getElementById('cardTarget').textContent=`対象:${c.target||'-'}`;
+      document.getElementById('overlay').classList.add('active');
+      document.getElementById('cardModal').classList.add('active');
+      document.getElementById('cardUseBtn').onclick=()=>{useCard(i,id);closeCardModal();};
+    }
+    function closeCardModal(){document.getElementById('overlay').classList.remove('active');document.getElementById('cardModal').classList.remove('active');}
+
+    function useCard(i,id){
+      const side=S.side;
+      const c=Cards[id]; if(S.cost[side]<c.cost)return;
+      S.cost[side]-=c.cost; S.hand[side].splice(i,1);
+      if(c.type==='supply'){drawCards(side,2);addLog('補給で 2 枚ドロー');setBar('補給しました');popup('補給で 2 枚ドロー');}
+      else if(c.type==='summon'){S.pending={kind:'summon'};setBar('自陣 2 段目の空きマスを選択してください');popup('召喚マスを選択');}
+      else if(c.type==='equip'){S.pending={kind:'equip',to:c.as};S.usedEquip[side]=true;setBar('装備するポーンを選択してください');popup('装備するポーンを選択');}
+      else if(c.type==='trap'){S.pending={kind:'trap',type:id};S.usedTrap[side]=true;setBar('自陣 1〜3 段目の空きマスを選択してください');popup('罠マスを選択');}
+      else if(c.type==='bounty'){S.pending={kind:'bounty'};setBar('賞金を付与する味方駒を選択してください');popup('賞金を付与する駒を選択');}
+      render();
+    }
+
+    function clickSq(r,c){
+      if(S.over||S.side==='b')return;
+      const side=S.side;
+      const p=S.board[r][c];
+      if(S.pending){
+        if(S.pending.kind==='summon'){
+          if(!p&&isSummonRow(r,side)){
+            S.board[r][c]={type:'pawn',color:side,moved:false,lock:1,equip:null,bounty:false};
+            addLog('ポーンを召喚しました'); S.pending=null; setBar('ポーンを召喚しました'); popup('ポーンを召喚しました'); render(); return;
+          }else return popup('自陣 2 段目の空きマスを選択',true);
+        }
+        if(S.pending.kind==='equip'){
+          if(p&&p.color===side&&p.type==='pawn'&&!p.equip){
+            p.equip=S.pending.to; p.lock=1; addLog('装備しました'); S.pending=null; setBar('装備しました'); popup('装備しました'); render(); return;
+          }else return popup('装備されていない味方ポーンを選択',true);
+        }
+        if(S.pending.kind==='trap'){
+          if(!p&&isTrapRow(r,side)){
+            S.traps.push({r,c,type:S.pending.type,owner:side}); addLog('ワナを設置しました'); S.pending=null; setBar('ワナを設置しました'); popup('ワナを設置しました'); render(); return;
+          }else return popup('自陣 1〜3 段目の空きマスを選択',true);
+        }
+        if(S.pending.kind==='bounty'){
+          if(p&&p.color===side){p.bounty=true;addLog('賞金を付与しました');S.pending=null;setBar('賞金を付与しました');popup('賞金を付与しました');render();return;}
+          else return popup('味方駒を選択',true);
+        }
+      }
+      if(S.sel){
+        const mv=S.moves.find(m=>m.r===r&&m.c===c);
+        if(mv)performMove(S.sel.r,S.sel.c,r,c,mv.enPassant);
+        else clearSelection();
+        return;
+      }
+      if(p&&p.color===side&&p.lock===0){S.sel={r,c};S.moves=legalMoves(r,c,p);setBar('駒を選択しました');render();}
+    }
+
+    function clearSelection(){S.sel=null;S.moves=[];setBar('メインフェイズです');render();}
+    function isSummonRow(r,color){return color==='w'?r===6:r===1;}
+    function isTrapRow(r,color){return color==='w'?r>=5:r<=2;}
+
+    function legalMoves(r,c,p){
+      const color=p.color,type=p.equip||p.type,res=[];
+      const add=(rr,cc)=>{if(rr<0||rr>7||cc<0||cc>7)return;const q=S.board[rr][cc];if(!q)res.push({r:rr,c:cc,cap:false});else if(q.color!==color)res.push({r:rr,c:cc,cap:true});};
+      if(type==='pawn'){
+        const dir=color==='w'?-1:1,start=color==='w'?6:1;
+        if(!S.board[r+dir]?.[c])add(r+dir,c);
+        if(r===start&&!S.board[r+dir]?.[c]&&!S.board[r+2*dir]?.[c])add(r+2*dir,c);
+        [-1,1].forEach(dc=>{const rr=r+dir,cc=c+dc;if(rr<0||rr>7||cc<0||cc>7)return;const q=S.board[rr][cc];if(q&&q.color!==color)res.push({r:rr,c:cc,cap:true});if(S.enPassant&&S.enPassant.r===rr&&S.enPassant.c===cc)res.push({r:rr,c:cc,cap:true,enPassant:true});});
+      }else{
+        const dirs={knight:[[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]],king:[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]],rook:[[1,0],[-1,0],[0,1],[0,-1]],bishop:[[1,1],[1,-1],[-1,1],[-1,-1]],queen:[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]}[type];
+        if(type==='knight'||type==='king')dirs.forEach(([dr,dc])=>add(r+dr,c+dc));
+        else dirs.forEach(([dr,dc])=>{let rr=r+dr,cc=c+dc;while(rr>=0&&rr<8&&cc>=0&&cc<8){const q=S.board[rr][cc];if(!q)res.push({r:rr,c:cc,cap:false});else{if(q.color!==color)res.push({r:rr,c:cc,cap:true});break;}rr+=dr;cc+=dc;}});
+      }
+      return res.filter(m=>!wouldSelfCheck(r,c,m.r,m.c,m.enPassant,p));
+    }
+
+    function cloneBoard(){return S.board.map(row=>row.map(p=>p?{...p}:null));}
+    function kingPos(color,b=S.board){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=b[r][c];if(p&&p.type==='king'&&p.color===color)return{r,c}}return null;}
+    function inCheck(color,b=S.board){const k=kingPos(color,b);if(!k)return false;for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=b[r][c];if(p&&p.color!==color&&attacks(r,c,p,k.r,k.c,b))return true;}return false;}
+
+    function attacks(r,c,p,tr,tc,b){
+      const color=p.color,type=p.equip||p.type;
+      if(type==='pawn'){const d=color==='w'?-1:1;return tr===r+d&&(tc===c-1||tc===c+1);}
+      if(type==='knight')return[[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]].some(([dr,dc])=>tr===r+dr&&tc===c+dc);
+      if(type==='king')return Math.max(Math.abs(tr-r),Math.abs(tc-c))===1;
+      const dirs={rook:[[1,0],[-1,0],[0,1],[0,-1]],bishop:[[1,1],[1,-1],[-1,1],[-1,-1]],queen:[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]}[type];
+      for(const[dr,dc]of dirs){let rr=r+dr,cc=c+dc;while(rr>=0&&rr<8&&cc>=0&&cc<8){if(rr===tr&&cc===tc)return true;if(b[rr][cc])break;rr+=dr;cc+=dc;}}return false;
+    }
+
+    function wouldSelfCheck(fr,fc,tr,tc,en,piece){const b=cloneBoard();const mv=b[fr][fc];b[fr][fc]=null;if(en)b[fr][tc]=null;b[tr][tc]=mv;if(mv.type==='pawn'&&!mv.equip&&((mv.color==='w'&&tr===0)||(mv.color==='b'&&tr===7)))mv.type='queen';return inCheck(piece.color,b);}
+
+    function hasLegal(color){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=S.board[r][c];if(p&&p.color===color&&p.lock===0&&legalMoves(r,c,p).length)return true;}return false;}
+
+    function performMove(fr,fc,tr,tc,en){
+      const p=S.board[fr][fc],t=S.board[tr][tc];
+      const isCpu=p.color==='b';
+      S.board[fr][fc]=null;if(en){S.board[fr][tc]=null;addLog((isCpu?'CPUが':'')+'アンパッサンで撃破しました');popup((isCpu?'CPUが':'')+'アンパッサンで撃破しました',false,isCpu);}
+      S.board[tr][tc]=p;p.moved=true;
+      if(t){
+        addLog((isCpu?'CPUが':'')+'撃破しました');popup((isCpu?'CPUが':'')+'撃破しました',false,isCpu);
+        if(p.bounty&&t.type!=='king'){S.cost[p.color]=Math.min(COST_MAX,S.cost[p.color]+2);setBar('賞金でコスト +2',false,isCpu);popup('賞金でコスト +2',false,isCpu);}
+        if(t.type==='king'){finishGame(S.side==='w'?'プレイヤー':'CPU','キング撃破');return;}
+      }
+      if(p.type==='pawn'&&Math.abs(tr-fr)===2)S.enPassant={r:(fr+tr)/2,c:fc,color:p.color};else S.enPassant=null;
+      if(p.type==='pawn'&&!p.equip&&((p.color==='w'&&tr===0)||(p.color==='b'&&tr===7))){p.type='queen';addLog((isCpu?'CPUの':'')+'ポーンがクイーンに昇格');popup((isCpu?'CPUの':'')+'ポーンがクイーンに昇格',false,isCpu);}
+      resolveTrap(tr,tc,p);
+      const opp=p.color==='w'?'b':'w';
+      if(inCheck(opp)){addLog('チェック');popup('チェック');if(!hasLegal(opp)){finishGame(S.side==='w'?'プレイヤー':'CPU','チェックメイト');return;}}
+      else if(!hasLegal(opp)){finishGame('引き分け','ステイルメイト');return;}
+      S.sel=null;S.moves=[];S.phase='battle';setBar((isCpu?'CPUが移動しました':'バトルフェイズ - ターン終了'),false,isCpu);render();
+      S.side=S.side==='w'?'b':'w';if(S.side==='w')S.turn++;setTimeout(startTurn,400);
+    }
+
+    function resolveTrap(r,c,piece){
+      const idx=S.traps.findIndex(t=>t.r===r&&t.c===c&&t.owner!==piece.color);if(idx===-1)return;
+      const trap=S.traps.splice(idx,1)[0];setBar('罠が発動しました',true);popup('罠が発動しました',true);addLog('罠が発動しました');
+      if(trap.type==='trapCapture'){piece.color=trap.owner;piece.lock=1;}
+      else if(trap.type==='trapSlow'){piece.lock=1;}
+      else if(trap.type==='trapPush'){const dir=trap.owner==='w'?1:-1,nr=r+dir;if(nr>=0&&nr<8&&!S.board[nr][c]){S.board[nr][c]=piece;S.board[r][c]=null;}}
+      else if(trap.type==='trapDrain'){S.cost[piece.color]=Math.max(0,S.cost[piece.color]-1);}
+    }
+
+    function finishGame(winner,reason){S.over=true;document.getElementById('goTitle').textContent=winner;document.getElementById('goMsg').textContent=reason;document.getElementById('goModal').classList.add('active');document.getElementById('overlay').classList.add('active');addLog(`ゲーム終了:${reason}`);}
+
+    function toggleMenu(){document.getElementById('menuDrop').classList.toggle('active');}
+    function setCpu(lv){S.cpu=lv;document.querySelectorAll('.cpu-item').forEach(e=>e.classList.toggle('sel',e.dataset.lv===lv));addLog(`CPU 難易度:${lv}`);document.getElementById('menuDrop').classList.remove('active');}
+    function toggleLog(){S.logOpen=!S.logOpen;['logBoxMobile','logBoxPc'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=S.logOpen?'block':'none';});document.getElementById('menuDrop').classList.remove('active');}
+    function showRules(){document.getElementById('overlay').classList.add('active');document.getElementById('rulesPopup').classList.add('active');document.getElementById('menuDrop').classList.remove('active');}
+    function closeRules(){document.getElementById('overlay').classList.remove('active');document.getElementById('rulesPopup').classList.remove('active');}
+    function resign(){if(confirm('本当に投了しますか？'))finishGame(S.side==='w'?'CPU':'プレイヤー','投了しました');}
+
+    // ===== CPU ロジック（一手ずつ処理・通知あり） =====
+    function cpuTurn(){
+      if(S.over)return;
+      try{
+        if(S.cpu==='tutorial'){
+          setBar('CPUがキングを動かします',false,true);
+          setTimeout(cpuMoveKingOnly,500);
+          return;
+        }
+        const attemptsByLevel={easy:1,normal:2,hard:3};
+        S.cpuActionsLeft=attemptsByLevel[S.cpu]||1;
+        S.cpuFailed=new Set();
+        setBar('CPUが考えています…',false,true);
+        setTimeout(cpuStep,500);
+      }catch(e){
+        addLog('CPUエラー:'+e.message);
+        cpuMoveKingOnly();
+      }
+    }
+
+    function cpuStep(){
+      if(S.over)return;
+      try{
+        if(S.cpuActionsLeft>0){
+          const choice=chooseOneCpuCard('b',S.cpuFailed);
+          if(choice){
+            const ok=applyCpuCard('b',choice);
+            render();
+            if(ok){
+              S.cpuActionsLeft--;
+              setBar('CPUが次の行動を検討中…',false,true);
+              setTimeout(cpuStep,750);
+              return;
+            }else{
+              S.cpuFailed.add(choice.id);
+              setTimeout(cpuStep,80);
+              return;
+            }
+          }
+        }
+      }catch(e){
+        addLog('CPUカード処理エラー:'+e.message);
+      }
+      setBar('CPUが駒を動かします',false,true);
+      setTimeout(()=>{
+        try{cpuMove();}
+        catch(e){addLog('CPU移動エラー:'+e.message);cpuMoveKingOnly();}
+      },500);
+    }
+
+    function cpuMoveKingOnly(){
+      const k=kingPos('b');
+      if(k){
+        const p=S.board[k.r][k.c],ms=legalMoves(k.r,k.c,p);
+        if(ms.length){const m=ms[Math.floor(Math.random()*ms.length)];performMove(k.r,k.c,m.r,m.c,m.enPassant);return;}
+      }
+      S.side='w';S.turn++;startTurn();
+    }
+
+    function chooseOneCpuCard(side,failedSet){
+      const hand=S.hand[side];
+      const usable=hand.map((id,idx)=>({id,idx,c:Cards[id]})).filter(x=>{
+        if(failedSet.has(x.id))return false;
+        if(S.cost[side]<x.c.cost)return false;
+        if(x.c.type==='equip'&&S.usedEquip[side])return false;
+        if(x.c.type==='trap'&&S.usedTrap[side])return false;
+        return true;
+      });
+      if(!usable.length)return null;
+      if(S.cpu==='easy')return usable[Math.floor(Math.random()*usable.length)];
+      if(S.cpu==='normal')return pickCardNormal(usable);
+      return pickCardHard(usable);
+    }
+
+    function pickCardNormal(usable){
+      const bySummon=usable.find(x=>x.c.type==='summon'&&hasSummonSpace('b'));
+      if(bySummon)return bySummon;
+      const byEquip=usable.find(x=>x.c.type==='equip'&&hasEquipTarget('b'));
+      if(byEquip&&Math.random()<0.6)return byEquip;
+      const byBounty=usable.find(x=>x.c.type==='bounty'&&hasBountyTarget('b'));
+      if(byBounty&&Math.random()<0.5)return byBounty;
+      const byTrap=usable.find(x=>x.c.type==='trap'&&hasTrapSpace('b'));
+      if(byTrap&&Math.random()<0.4)return byTrap;
+      return usable[Math.floor(Math.random()*usable.length)];
+    }
+
+    function pickCardHard(usable){
+      const bySummon=usable.find(x=>x.c.type==='summon'&&hasSummonSpace('b'));
+      if(bySummon&&countPieces('b')<6)return bySummon;
+      const rookEquip=usable.find(x=>x.id==='rookEquip'&&hasEquipTarget('b'));
+      if(rookEquip)return rookEquip;
+      const anyEquip=usable.find(x=>x.c.type==='equip'&&hasEquipTarget('b'));
+      if(anyEquip)return anyEquip;
+      const byBounty=usable.find(x=>x.c.type==='bounty'&&hasBountyTarget('b'));
+      if(byBounty)return byBounty;
+      const byTrap=usable.find(x=>x.c.type==='trap'&&hasTrapSpace('b'));
+      if(byTrap)return byTrap;
+      return usable[Math.floor(Math.random()*usable.length)];
+    }
+
+    function hasSummonSpace(color){const row=color==='w'?6:1;for(let c=0;c<8;c++)if(!S.board[row][c])return true;return false;}
+    function hasEquipTarget(color){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=S.board[r][c];if(p&&p.color===color&&p.type==='pawn'&&!p.equip)return true;}return false;}
+    function hasBountyTarget(color){for(let r=0;r<8;r++)for(let c=0;c<8;c++){const p=S.board[r][c];if(p&&p.color===color&&!p.bounty)return true;}return false;}
+    function hasTrapSpace(color){const rows=color==='w'?[5,6,7]:[0,1,2];for(const r of rows)for(let c=0;c<8;c++)if(!S.board[r][c])return true;return false;}
+    function countPieces(color){let n=0;for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(S.board[r][c]&&S.board[r][c].color===color)n++;return n;}
+
+    function applyCpuCard(side,choice){
+      const {id,idx,c}=choice;
+      if(c.type==='summon'){
+        if(!hasSummonSpace(side))return false;
+        const row=side==='w'?6:1;const cols=[];for(let cc=0;cc<8;cc++)if(!S.board[row][cc])cols.push(cc);
+        const col=cols[Math.floor(Math.random()*cols.length)];
+        S.cost[side]-=c.cost;S.hand[side].splice(idx,1);
+        S.board[row][col]={type:'pawn',color:side,moved:false,lock:1,equip:null,bounty:false};
+        addLog('CPUがポーンを召喚しました');setBar('CPUがポーンを召喚しました',false,true);popup('CPUがポーンを召喚しました',false,true);
+      }else if(c.type==='equip'){
+        const targets=[];for(let r=0;r<8;r++)for(let cc=0;cc<8;cc++){const p=S.board[r][cc];if(p&&p.color===side&&p.type==='pawn'&&!p.equip)targets.push({r,c:cc});}
+        if(!targets.length)return false;
+        const t=targets[Math.floor(Math.random()*targets.length)];
+        S.cost[side]-=c.cost;S.hand[side].splice(idx,1);S.usedEquip[side]=true;
+        const p=S.board[t.r][t.c];p.equip=c.as;p.lock=1;
+        addLog('CPUが装備しました');setBar('CPUが装備しました',false,true);popup('CPUが装備しました',false,true);
+      }else if(c.type==='trap'){
+        const rows=side==='w'?[5,6,7]:[0,1,2];const spots=[];for(const r of rows)for(let cc=0;cc<8;cc++)if(!S.board[r][cc])spots.push({r,c:cc});
+        if(!spots.length)return false;
+        const sp=spots[Math.floor(Math.random()*spots.length)];
+        S.cost[side]-=c.cost;S.hand[side].splice(idx,1);S.usedTrap[side]=true;
+        S.traps.push({r:sp.r,c:sp.c,type:id,owner:side});
+        addLog('CPUがワナを設置しました');setBar('CPUがワナを設置しました',false,true);popup('CPUがワナを設置しました',false,true);
+      }else if(c.type==='bounty'){
+        const targets=[];for(let r=0;r<8;r++)for(let cc=0;cc<8;cc++){const p=S.board[r][cc];if(p&&p.color===side&&!p.bounty)targets.push({r,c:cc});}
+        if(!targets.length)return false;
+        const val={king:0,queen:9,rook:5,bishop:3,knight:3,pawn:1};
+        targets.sort((a,b)=>{
+          const pa=S.board[a.r][a.c],pb=S.board[b.r][b.c];
+          return (val[pb.equip||pb.type]||0)-(val[pa.equip||pa.type]||0);
+        });
+        const t=S.cpu==='hard'?targets[0]:targets[Math.floor(Math.random()*targets.length)];
+        S.cost[side]-=c.cost;S.hand[side].splice(idx,1);
+        S.board[t.r][t.c].bounty=true;
+        addLog('CPUが賞金を付与しました');setBar('CPUが賞金を付与しました',false,true);popup('CPUが賞金を付与しました',false,true);
+      }else if(c.type==='supply'){
+        S.cost[side]-=c.cost;S.hand[side].splice(idx,1);
+        drawCards(side,2);
+        addLog('CPUが補給しました');setBar('CPUが補給しました',false,true);popup('CPUが補給しました',false,true);
+      }else return false;
+      return true;
+    }
+
+    function cpuMove(){
+      if(S.over)return;
+      const side='b';
+      const moves=[];
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const p=S.board[r][c];
+        if(p&&p.color===side&&p.lock===0){
+          const ms=legalMoves(r,c,p);
+          ms.forEach(m=>moves.push({fr:r,fc:c,...m}));
+        }
+      }
+      if(!moves.length){S.side='w';S.turn++;startTurn();return;}
+      let chosen;
+      const val={king:1000,queen:9,rook:5,bishop:3,knight:3,pawn:1};
+      if(S.cpu==='easy'){
+        const captures=moves.filter(m=>m.cap);
+        if(captures.length&&Math.random()<0.45)chosen=captures[Math.floor(Math.random()*captures.length)];
+        else chosen=moves[Math.floor(Math.random()*moves.length)];
+      }else if(S.cpu==='normal'){
+        let best=-999;
+        for(const m of moves){
+          const t=S.board[m.r][m.c];
+          let score=t?(val[t.equip||t.type]||0):0;
+          score+=Math.random()*0.5;
+          if(score>best){best=score;chosen=m;}
+        }
+      }else{
+        let best=-9999;
+        for(const m of moves){
+          const t=S.board[m.r][m.c];
+          let score=t?(val[t.equip||t.type]||0)*10:0;
+          const b=cloneBoard();
+          const mover=b[m.fr][m.fc];
+          b[m.fr][m.fc]=null;b[m.r][m.c]=mover;
+          let riskiest=0;
+          for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+            const enemy=b[r][c];
+            if(enemy&&enemy.color==='w'&&attacks(r,c,enemy,m.r,m.c,b)){
+              riskiest=Math.max(riskiest,(val[mover.equip||mover.type]||0));
+            }
+          }
+          score-=riskiest*8;
+          score+=Math.random()*0.3;
+          if(score>best){best=score;chosen=m;}
+        }
+      }
+      performMove(chosen.fr,chosen.fc,chosen.r,chosen.c,chosen.enPassant);
+    }
+
+    function updateHandArrows(){
+      const el=document.getElementById('handMobile');
+      if(!el)return;
+      const left=document.getElementById('handLeft');
+      const right=document.getElementById('handRight');
+      left.disabled = el.scrollLeft <= 0;
+      right.disabled = el.scrollWidth - el.clientWidth - el.scrollLeft < 4;
+    }
+    function scrollHand(dir){
+      const el=document.getElementById('handMobile');
+      if(!el)return;
+      el.scrollBy({left:dir*100,behavior:'smooth'});
+      setTimeout(updateHandArrows,200);
+    }
+
+    function checkLayout(){if(window.innerWidth>=800){document.getElementById('leftCol').style.display='flex';document.getElementById('rightCol').style.display='flex';document.getElementById('handPanelMobile').style.display='none';}else{document.getElementById('leftCol').style.display='none';document.getElementById('rightCol').style.display='none';document.getElementById('handPanelMobile').style.display='block';}}
+    window.addEventListener('resize',checkLayout);
+
+    resetGame(); checkLayout();
+  </script>
+</body>
+</html>
